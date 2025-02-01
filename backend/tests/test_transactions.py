@@ -36,7 +36,6 @@ db_mod.SessionLocal = TestingSessionLocal
 # Patch the "created_at" Column Default in the Transaction Model for SQLite
 ###############################################################################
 
-# Import the Transaction model from app.models
 from app.models import Transaction
 from sqlalchemy.schema import ColumnDefault
 
@@ -217,3 +216,39 @@ def test_historical_endpoint(test_db):
     data = response.json()
     assert "message" in data, "Response should contain a 'message' field"
     assert data["message"].startswith("Historical processing initiated"), "Returned message does not match expected text"
+
+def test_get_swap_price(monkeypatch, test_db):
+    """
+    Test the GET /transactions/swapprice/{tx_hash} endpoint:
+    Verify that if a transaction exists without a swap price,
+    the endpoint decodes the swap price and returns it.
+    """
+    # Insert a test transaction without a swap price.
+    test_tx = schemas.TransactionCreate(
+        tx_hash="0xsomethingsimulated",
+        block_number=777777,
+        time_stamp=datetime.utcnow(),
+        from_address="0xfrom",
+        to_address="0xto",
+        gas=21000,
+        gas_price=1000000000,
+        gas_used=21000,
+        fee_eth=Decimal("0.00021"),
+        fee_usdt=Decimal("0.63")
+    )
+    crud.create_transaction(test_db, test_tx)
+
+    # Monkey-patch the decode_swap_price function in app.tasks to return a dummy value.
+    def dummy_decode_swap_price(tx_hash: str) -> Decimal:
+        return Decimal("0.00123")
+    monkeypatch.setattr("app.tasks.decode_swap_price", dummy_decode_swap_price)
+
+    # Call the GET /transactions/swapprice/{tx_hash} endpoint.
+    response = client.get("/transactions/swapprice/0xsomethingsimulated")
+    assert response.status_code == 200, f"Response status code: {response.status_code}"
+    data = response.json()
+    assert data["tx_hash"] == "0xsomethingsimulated", "Returned transaction hash does not match"
+    expected_value = Decimal("0.00123").quantize(Decimal("0.00001"))
+    actual_value = Decimal(data["swap_price"]).quantize(Decimal("0.00001"))
+    assert actual_value == expected_value, "Returned swap price does not match the dummy value"
+

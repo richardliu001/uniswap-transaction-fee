@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List, Optional
-from .. import crud, schemas
+from .. import crud, schemas, tasks
 from ..database import SessionLocal
 
 router = APIRouter(
@@ -10,7 +10,6 @@ router = APIRouter(
     tags=["transactions"]
 )
 
-# Dependency to get a database session
 def get_db():
     db = SessionLocal()
     try:
@@ -18,7 +17,6 @@ def get_db():
     finally:
         db.close()
 
-# Endpoint to retrieve a list of transactions with optional filters and pagination
 @router.get("/", response_model=List[schemas.Transaction])
 def read_transactions(
     tx_hash: Optional[str] = Query(None, description="Transaction hash to filter"),
@@ -32,7 +30,6 @@ def read_transactions(
     transactions = crud.get_transactions(db, tx_hash, start_time, end_time, skip, page_size)
     return transactions
 
-# Endpoint to retrieve a single transaction by its hash
 @router.get("/{tx_hash}", response_model=schemas.Transaction)
 def read_transaction(tx_hash: str, db: Session = Depends(get_db)):
     transaction = crud.get_transaction_by_hash(db, tx_hash)
@@ -40,13 +37,27 @@ def read_transaction(tx_hash: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Transaction not found")
     return transaction
 
-# Endpoint to initiate historical transaction processing (batch job)
 @router.post("/historical", response_model=dict)
 def process_historical_transactions(
     start_time: datetime,
     end_time: datetime,
     db: Session = Depends(get_db)
 ):
-    # This is a stub implementation.
-    # In production, implement fetching and processing of historical data.
+    # Stub implementation for historical processing.
     return {"message": "Historical processing initiated. (Not implemented)"}
+
+@router.get("/swapprice/{tx_hash}", response_model=schemas.SwapPriceResponse)
+def get_swap_price(tx_hash: str, db: Session = Depends(get_db)):
+    """
+    Get the decoded swap price for a transaction.
+    If the transaction exists but does not have a swap price, decode it on the fly.
+    """
+    transaction = crud.get_transaction_by_hash(db, tx_hash)
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if transaction.swap_price is None:
+        swap_price = tasks.decode_swap_price(tx_hash)
+        if swap_price == 0:
+            raise HTTPException(status_code=400, detail="Swap price could not be decoded")
+        transaction = crud.update_swap_price(db, tx_hash, swap_price)
+    return schemas.SwapPriceResponse(tx_hash=transaction.tx_hash, swap_price=transaction.swap_price)

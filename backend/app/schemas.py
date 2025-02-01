@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from decimal import Decimal
 from typing import Optional
@@ -14,7 +14,8 @@ class TransactionBase(BaseModel):
     gas_used: int
     fee_eth: Decimal
     fee_usdt: Decimal
-    created_at: datetime
+    # Provide a default value using a default factory so that this field is not required on input.
+    created_at: datetime = Field(default_factory=datetime.utcnow)
     swap_price: Optional[Decimal] = None
 
 class TransactionCreate(TransactionBase):
