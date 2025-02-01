@@ -1,0 +1,102 @@
+version: "3.8"
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: uniswap
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./backend/sql:/docker-entrypoint-initdb.d
+    networks:
+      - backend_net
+
+  backend1:
+    build: ./backend
+    depends_on:
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: password
+      DB_NAME: uniswap
+      ETHERSCAN_API_KEY: your_etherscan_api_key
+      POLL_INTERVAL: 60
+      WORKER_ID: 0
+      TOTAL_WORKERS: 3
+    networks:
+      - backend_net
+    restart: always
+
+  backend2:
+    build: ./backend
+    depends_on:
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: password
+      DB_NAME: uniswap
+      ETHERSCAN_API_KEY: your_etherscan_api_key
+      POLL_INTERVAL: 60
+      WORKER_ID: 1
+      TOTAL_WORKERS: 3
+    networks:
+      - backend_net
+    restart: always
+
+  backend3:
+    build: ./backend
+    depends_on:
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: password
+      DB_NAME: uniswap
+      ETHERSCAN_API_KEY: your_etherscan_api_key
+      POLL_INTERVAL: 60
+      WORKER_ID: 2
+      TOTAL_WORKERS: 3
+    networks:
+      - backend_net
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      - backend1
+      - backend2
+      - backend3
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - backend_net
+    restart: always
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - nginx
+    environment:
+      REACT_APP_API_BASE_URL: http://nginx:8000
+    ports:
+      - "3000:3000"
+    networks:
+      - backend_net
+    restart: always
+
+volumes:
+  mysql_data:
+
+networks:
+  backend_net:
