@@ -2,7 +2,6 @@ from sqlalchemy.orm import Session
 from . import models, schemas
 from datetime import datetime
 
-# Create a new transaction record in the database
 def create_transaction(db: Session, transaction: schemas.TransactionCreate):
     db_transaction = models.Transaction(
         tx_hash=transaction.tx_hash,
@@ -21,11 +20,9 @@ def create_transaction(db: Session, transaction: schemas.TransactionCreate):
     db.refresh(db_transaction)
     return db_transaction
 
-# Retrieve a transaction record by its hash
 def get_transaction_by_hash(db: Session, tx_hash: str):
     return db.query(models.Transaction).filter(models.Transaction.tx_hash == tx_hash).first()
 
-# Retrieve transactions with optional filters and pagination
 def get_transactions(db: Session, tx_hash: str = None, start_time: datetime = None, end_time: datetime = None, skip: int = 0, limit: int = 50):
     query = db.query(models.Transaction)
     if tx_hash:
@@ -34,11 +31,9 @@ def get_transactions(db: Session, tx_hash: str = None, start_time: datetime = No
         query = query.filter(models.Transaction.time_stamp >= start_time)
     if end_time:
         query = query.filter(models.Transaction.time_stamp <= end_time)
-    # Order transactions by timestamp descending (latest first)
     transactions = query.order_by(models.Transaction.time_stamp.desc()).offset(skip).limit(limit).all()
     return transactions
 
-# Retrieve summary information: total fee in ETH and USDT
 def get_summary(db: Session):
     from sqlalchemy import func
     result = db.query(
@@ -48,3 +43,14 @@ def get_summary(db: Session):
     total_fee_eth = result[0]
     total_fee_usdt = result[1]
     return total_fee_eth, total_fee_usdt
+
+def update_swap_price(db: Session, tx_hash: str, swap_price: Decimal):
+    """
+    Update the swap_price of the transaction identified by tx_hash.
+    """
+    transaction = get_transaction_by_hash(db, tx_hash)
+    if transaction:
+        transaction.swap_price = swap_price
+        db.commit()
+        db.refresh(transaction)
+    return transaction

@@ -1,8 +1,8 @@
 from pydantic import BaseModel
 from datetime import datetime
 from decimal import Decimal
+from typing import Optional
 
-# Base schema for a transaction
 class TransactionBase(BaseModel):
     tx_hash: str
     block_number: int
@@ -14,20 +14,24 @@ class TransactionBase(BaseModel):
     gas_used: int
     fee_eth: Decimal
     fee_usdt: Decimal
+    created_at: datetime
+    swap_price: Optional[Decimal] = None
 
-# Schema for creating a transaction record
 class TransactionCreate(TransactionBase):
     pass
 
-# Schema for returning a transaction record
 class Transaction(TransactionBase):
     id: int
 
     class Config:
         orm_mode = True
 
-# Schema for returning summary information
 class Summary(BaseModel):
     total_fee_eth: Decimal
     total_fee_usdt: Decimal
     current_eth_price: Decimal
+
+# New schema for returning the swap price response
+class SwapPriceResponse(BaseModel):
+    tx_hash: str
+    swap_price: Decimal

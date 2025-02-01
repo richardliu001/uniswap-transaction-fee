@@ -1,7 +1,6 @@
 import os
 
 
-# Configuration settings for the application
 class Settings:
     # Database settings
     DB_HOST = os.getenv('DB_HOST', 'mysql')
@@ -20,11 +19,12 @@ class Settings:
     # Polling interval in seconds for live transaction fetching
     POLL_INTERVAL = int(os.getenv('POLL_INTERVAL', '60'))
 
-    # Distributed worker configuration for sharded execution
-    # WORKER_ID: current instance ID (default 0)
-    # TOTAL_WORKERS: total number of deployed instances (default 1)
+    # Distributed worker configuration (for sharding)
     WORKER_ID = int(os.getenv('WORKER_ID', '0'))
     TOTAL_WORKERS = int(os.getenv('TOTAL_WORKERS', '1'))
+
+    # Infura URL for connecting to Ethereum node (replace YOUR_INFURA_PROJECT_ID with your actual project ID)
+    INFURA_URL = os.getenv('INFURA_URL', 'https://mainnet.infura.io/v3/YOUR_INFURA_PROJECT_ID')
 
 
 settings = Settings()
