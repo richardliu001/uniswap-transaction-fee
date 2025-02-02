@@ -25,10 +25,11 @@ services:
       DB_USER: root
       DB_PASSWORD: password
       DB_NAME: uniswap
-      ETHERSCAN_API_KEY: your_etherscan_api_key
+      ETHERSCAN_API_KEY: C4JIRNXJBE1GXTQS6WDFUZB1MSE5SWH5P6
       POLL_INTERVAL: 60
       WORKER_ID: 0
       TOTAL_WORKERS: 3
+      INFURA_URL: "https://mainnet.infura.io/v3/f0f35c186b794f80a5775604de3b883e"
     networks:
       - backend_net
     restart: always
@@ -43,10 +44,11 @@ services:
       DB_USER: root
       DB_PASSWORD: password
       DB_NAME: uniswap
-      ETHERSCAN_API_KEY: your_etherscan_api_key
+      ETHERSCAN_API_KEY: C4JIRNXJBE1GXTQS6WDFUZB1MSE5SWH5P6
       POLL_INTERVAL: 60
       WORKER_ID: 1
       TOTAL_WORKERS: 3
+      INFURA_URL: "https://mainnet.infura.io/v3/f0f35c186b794f80a5775604de3b883e"
     networks:
       - backend_net
     restart: always
@@ -61,10 +63,11 @@ services:
       DB_USER: root
       DB_PASSWORD: password
       DB_NAME: uniswap
-      ETHERSCAN_API_KEY: your_etherscan_api_key
+      ETHERSCAN_API_KEY: C4JIRNXJBE1GXTQS6WDFUZB1MSE5SWH5P6
       POLL_INTERVAL: 60
       WORKER_ID: 2
       TOTAL_WORKERS: 3
+      INFURA_URL: "https://mainnet.infura.io/v3/f0f35c186b794f80a5775604de3b883e"
     networks:
       - backend_net
     restart: always

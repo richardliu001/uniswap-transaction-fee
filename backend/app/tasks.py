@@ -39,33 +39,47 @@ def fetch_eth_price():
 
 def fetch_live_transactions():
     """
-    Fetch live Uniswap transactions from the Etherscan API.
+    Fetch live Uniswap transactions from the Etherscan API using pagination.
+
+    This function loops through pages until no more transactions are returned.
+    Returns:
+        A list of transaction dictionaries.
     """
-    try:
-        params = {
-            "module": "account",
-            "action": "tokentx",
-            "contractaddress": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
-            "page": 1,
-            "offset": 10,
-            "sort": "desc",
-            "apikey": settings.ETHERSCAN_API_KEY
-        }
-        response = requests.get(settings.ETHERSCAN_API_URL, params=params, timeout=10)
-        if response.status_code == 200:
+    all_transactions = []
+    page = 1
+    offset = 100  # Retrieve more transactions per page for live data
+    while True:
+        try:
+            params = {
+                "module": "account",
+                "action": "tokentx",
+                "contractaddress": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                "page": page,
+                "offset": offset,
+                "sort": "desc",  # Most recent transactions first
+                "apikey": settings.ETHERSCAN_API_KEY
+            }
+            response = requests.get(settings.ETHERSCAN_API_URL, params=params, timeout=10)
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch transactions on page {page}: {response.status_code}")
+                break
             data = response.json()
-            if data.get("status") == "1":
-                transactions = data.get("result", [])
-                return transactions
-            else:
-                logger.error(f"Etherscan API error: {data.get('message')}")
-                return []
-        else:
-            logger.error(f"Failed to fetch transactions: {response.status_code}")
-            return []
-    except Exception as e:
-        logger.error(f"Exception in fetching live transactions: {e}")
-        return []
+            if data.get("status") != "1":
+                logger.error(f"Etherscan API error on page {page}: {data.get('message')}")
+                break
+            transactions = data.get("result", [])
+            if not transactions:
+                logger.info("No more live transactions found.")
+                break
+            all_transactions.extend(transactions)
+            # If fewer transactions than requested are returned, no more pages are available.
+            if len(transactions) < offset:
+                break
+            page += 1
+        except Exception as e:
+            logger.error(f"Exception while paginating transactions on page {page}: {e}")
+            break
+    return all_transactions
 
 
 def decode_swap_price(tx_hash: str) -> Decimal:
@@ -134,6 +148,7 @@ def process_transactions(transactions, eth_price, db: Session):
     Sharding Logic:
     - Convert the transaction hash (a hex string) into an integer.
     - Only process the transaction if (txn_integer % TOTAL_WORKERS) equals WORKER_ID.
+    Additionally, after storing the transaction, decode and update the swap price.
     """
     for txn in transactions:
         txn_hash = txn.get("hash")
@@ -141,14 +156,14 @@ def process_transactions(transactions, eth_price, db: Session):
             logger.error("Transaction missing hash; skipping.")
             continue
 
-        # Convert the hash from hexadecimal to an integer
+        # Convert the hash from hexadecimal to an integer.
         try:
             txn_numeric = int(txn_hash[2:], 16) if txn_hash.startswith("0x") else int(txn_hash, 16)
         except ValueError as e:
             logger.error(f"Invalid transaction hash {txn_hash}: {e}")
             continue
 
-        # Apply sharding: process only if (txn_numeric % TOTAL_WORKERS) == WORKER_ID
+        # Apply sharding: process only if (txn_numeric % TOTAL_WORKERS) == WORKER_ID.
         if settings.TOTAL_WORKERS <= 0:
             logger.error("TOTAL_WORKERS must be greater than 0.")
         if txn_numeric % settings.TOTAL_WORKERS != settings.WORKER_ID:
@@ -156,21 +171,21 @@ def process_transactions(transactions, eth_price, db: Session):
                 f"Skipping transaction {txn_hash} due to sharding: {txn_numeric} % {settings.TOTAL_WORKERS} != {settings.WORKER_ID}.")
             continue
 
-        # Skip if the transaction already exists
+        # Skip if the transaction already exists.
         existing = crud.get_transaction_by_hash(db, txn_hash)
         if existing:
             logger.info(f"Transaction {txn_hash} already exists; skipping.")
             continue
 
         try:
-            # Calculate fee in ETH: fee = gasUsed * gasPrice / 1e18
+            # Calculate fee in ETH: fee = gasUsed * gasPrice / 1e18.
             gas_used = int(txn.get("gasUsed", 0))
             gas_price = int(txn.get("gasPrice", 0))
             fee_wei = gas_used * gas_price
             fee_eth = Decimal(fee_wei) / Decimal(10 ** 18)
             fee_usdt = fee_eth * eth_price
 
-            # Convert timestamp string to datetime object
+            # Convert timestamp string to a datetime object.
             time_stamp = datetime.fromtimestamp(int(txn.get("timeStamp", 0)))
 
             transaction_data = schemas.TransactionCreate(
@@ -185,8 +200,17 @@ def process_transactions(transactions, eth_price, db: Session):
                 fee_eth=fee_eth,
                 fee_usdt=fee_usdt
             )
+            # Create transaction record in the database.
             crud.create_transaction(db, transaction_data)
             logger.info(f"Stored transaction {txn_hash} processed by shard {settings.WORKER_ID}.")
+
+            # Decode the swap price for this transaction and update the record.
+            swap_price = decode_swap_price(txn_hash)
+            if swap_price > Decimal("0"):
+                crud.update_swap_price(db, txn_hash, swap_price)
+                logger.info(f"Updated transaction {txn_hash} with swap price {swap_price}.")
+            else:
+                logger.info(f"Swap price for transaction {txn_hash} is 0; not updated.")
         except Exception as e:
             logger.error(f"Error processing transaction {txn_hash}: {e}")
 
@@ -194,19 +218,169 @@ def process_transactions(transactions, eth_price, db: Session):
 def live_transaction_polling():
     """
     Background thread function for live transaction polling with sharding support.
-    It continuously fetches the current ETH price, retrieves live transactions, and processes them.
+    It continuously fetches the current ETH price, retrieves live transactions (using pagination),
+    compares with the latest processed timestamp from the database to avoid duplicates,
+    and processes new transactions.
     """
+    from sqlalchemy import func
+    from app.models import Transaction
+
     while True:
         db = SessionLocal()
         try:
             eth_price = fetch_eth_price()
-            transactions = fetch_live_transactions()
-            process_transactions(transactions, eth_price, db)
+            # Use pagination to fetch all available transactions.
+            all_transactions = []
+            page = 1
+            offset = 100  # Retrieve more transactions per page for live data.
+            while True:
+                try:
+                    params = {
+                        "module": "account",
+                        "action": "tokentx",
+                        "contractaddress": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                        "page": page,
+                        "offset": offset,
+                        "sort": "desc",  # Most recent transactions first.
+                        "apikey": settings.ETHERSCAN_API_KEY
+                    }
+                    response = requests.get(settings.ETHERSCAN_API_URL, params=params, timeout=10)
+                    if response.status_code != 200:
+                        logger.error(f"Failed to fetch transactions on page {page}: {response.status_code}")
+                        break
+                    data = response.json()
+                    if data.get("status") != "1":
+                        logger.error(f"Etherscan API error on page {page}: {data.get('message')}")
+                        break
+                    transactions = data.get("result", [])
+                    if not transactions:
+                        logger.info("No more live transactions found.")
+                        break
+                    all_transactions.extend(transactions)
+                    # If fewer transactions than requested are returned, no more pages available.
+                    if len(transactions) < offset:
+                        break
+                    page += 1
+                except Exception as e:
+                    logger.error(f"Exception while paginating transactions on page {page}: {e}")
+                    break
+
+            # Query the latest processed transaction timestamp from the database.
+            latest_tx = db.query(func.max(Transaction.time_stamp)).scalar()
+            if latest_tx is not None:
+                latest_ts = int(latest_tx.timestamp())
+            else:
+                latest_ts = 0
+
+            # Filter transactions: only process those with timeStamp > latest_ts.
+            filtered_transactions = []
+            for txn in all_transactions:
+                txn_ts = int(txn.get("timeStamp", 0))
+                if txn_ts > latest_ts:
+                    filtered_transactions.append(txn)
+                else:
+                    logger.info(
+                        f"Skipping transaction {txn.get('hash')} because timestamp {txn_ts} <= latest processed {latest_ts}.")
+
+            process_transactions(filtered_transactions, eth_price, db)
         except Exception as e:
             logger.error(f"Error in live polling: {e}")
         finally:
             db.close()
         time.sleep(settings.POLL_INTERVAL)
+
+
+def process_historical_transactions(start_time: datetime, end_time: datetime, db: Session):
+    """
+    Process historical transactions between start_time and end_time.
+    This function fetches transactions in batch pages using the Etherscan API.
+
+    It repeatedly requests pages until:
+      - No transactions are returned, or
+      - The oldest transaction in a page is older than start_time.
+
+    For each transaction in the returned page, if its timestamp is between start_time and end_time
+    and not already in the database, the transaction is processed and stored.
+
+    Returns the total number of processed transactions.
+    """
+    processed_count = 0
+    page = 1
+    offset = 100  # Retrieve more transactions per page for historical data.
+    while True:
+        try:
+            params = {
+                "module": "account",
+                "action": "tokentx",
+                "contractaddress": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                "page": page,
+                "offset": offset,
+                "sort": "asc",  # Ascending order: older transactions first.
+                "apikey": settings.ETHERSCAN_API_KEY
+            }
+            response = requests.get(settings.ETHERSCAN_API_URL, params=params, timeout=10)
+            if response.status_code != 200:
+                logger.error(f"Failed to fetch historical transactions on page {page}: {response.status_code}")
+                break
+            data = response.json()
+            if data.get("status") != "1":
+                logger.error(f"Etherscan API error (historical) on page {page}: {data.get('message')}")
+                break
+            transactions = data.get("result", [])
+            if not transactions:
+                logger.info("No more historical transactions found.")
+                break
+
+            # Convert start_time and end_time to UNIX timestamps.
+            start_ts = int(start_time.timestamp())
+            end_ts = int(end_time.timestamp())
+
+            transactions_in_range = []
+            for txn in transactions:
+                txn_ts = int(txn.get("timeStamp", 0))
+                # Process transaction only if it falls within the specified time range.
+                if start_ts <= txn_ts <= end_ts:
+                    # Check database for duplicates.
+                    if crud.get_transaction_by_hash(db, txn.get("hash")) is None:
+                        transactions_in_range.append(txn)
+            if not transactions_in_range:
+                # If the oldest transaction in this page is older than start_time, exit loop.
+                oldest_txn_ts = int(transactions[0].get("timeStamp", 0))
+                if oldest_txn_ts < start_ts:
+                    break
+
+            eth_price_current = fetch_eth_price()
+            process_transactions(transactions_in_range, eth_price_current, db)
+            processed_count += len(transactions_in_range)
+            logger.info(f"Processed {len(transactions_in_range)} historical transactions from page {page}.")
+            # If fewer transactions than requested are returned, no more pages available.
+            if len(transactions) < offset:
+                break
+            page += 1
+        except Exception as e:
+            logger.error(f"Error processing historical transactions on page {page}: {e}")
+            break
+    return processed_count
+
+
+def start_historical_processing(start_time: datetime, end_time: datetime):
+    """
+    Start a batch job to process historical transactions within a given time range.
+    This function runs in a separate thread.
+    """
+
+    def run():
+        db = SessionLocal()
+        try:
+            count = process_historical_transactions(start_time, end_time, db)
+            logger.info(f"Historical processing completed. Total processed transactions: {count}")
+        except Exception as e:
+            logger.error(f"Error in historical processing: {e}")
+        finally:
+            db.close()
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
 
 
 def start_background_tasks():
