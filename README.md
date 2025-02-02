@@ -45,7 +45,7 @@ This project provides a production‑ready backend built with FastAPI and SQLAlc
 - **Backend:**  
   - **FastAPI:** Provides RESTful API endpoints and background tasks.
   - **SQLAlchemy:** Handles ORM interactions with MySQL.
-  - **Background Tasks:** Polls live transaction data and processes historical data.
+  - **Background Tasks:** Polls live transaction data and processes historical data. 
   - **Infura & web3.py:** Used for connecting to Ethereum nodes and decoding Uniswap Swap events.
   
 - **Frontend:**  

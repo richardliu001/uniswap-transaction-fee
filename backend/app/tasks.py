@@ -1,7 +1,7 @@
 import time
 import threading
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
 from . import crud, schemas
@@ -267,8 +267,13 @@ def live_transaction_polling():
 
             # Query the latest processed transaction timestamp from the database.
             latest_tx = db.query(func.max(Transaction.time_stamp)).scalar()
+            ten_minutes_ago = datetime.utcnow() - timedelta(minutes=10)
             if latest_tx is not None:
-                latest_ts = int(latest_tx.timestamp())
+                # Use the later of the latest transaction timestamp or 10 minutes ago.
+                if latest_tx < ten_minutes_ago:
+                    latest_ts = int(ten_minutes_ago.timestamp())
+                else:
+                    latest_ts = int(latest_tx.timestamp())
             else:
                 latest_ts = 0
 

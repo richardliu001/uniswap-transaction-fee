@@ -1,5 +1,7 @@
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
+from starlette.middleware.cors import CORSMiddleware
+
 from .routers import transactions
 from .database import engine, Base, SessionLocal
 from .tasks import start_background_tasks, fetch_eth_price  # and start_background_tasks covers polling
@@ -12,6 +14,15 @@ app = FastAPI(
     title="Uniswap Transaction Fee API",
     description="API to fetch transaction fees in USDT for Uniswap transactions and decode swap prices.",
     version="1.0.0"
+)
+
+# Allow all origins. Note: allow_credentials must be False when allow_origins is set to ["*"].
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(transactions.router)
