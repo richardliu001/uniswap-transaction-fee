@@ -30,6 +30,15 @@ def read_transactions(
     transactions = crud.get_transactions(db, tx_hash, start_time, end_time, skip, page_size)
     return transactions
 
+@router.post("/historical")
+def historical_processing(start_time: datetime, end_time: datetime):
+    """
+    Trigger historical processing for transactions within the given time range.
+    This endpoint starts a background thread to process historical transactions.
+    """
+    tasks.start_historical_processing(start_time, end_time)
+    return {"message": "Historical processing started."}
+
 @router.get("/{tx_hash}", response_model=schemas.Transaction)
 def read_transaction(tx_hash: str, db: Session = Depends(get_db)):
     transaction = crud.get_transaction_by_hash(db, tx_hash)
