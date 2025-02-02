@@ -53,7 +53,7 @@ def fetch_live_transactions():
             params = {
                 "module": "account",
                 "action": "tokentx",
-                "contractaddress": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
                 "page": page,
                 "offset": offset,
                 "sort": "desc",  # Most recent transactions first
@@ -238,7 +238,7 @@ def live_transaction_polling():
                     params = {
                         "module": "account",
                         "action": "tokentx",
-                        "contractaddress": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                        "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
                         "page": page,
                         "offset": offset,
                         "sort": "desc",  # Most recent transactions first.
@@ -312,7 +312,7 @@ def process_historical_transactions(start_time: datetime, end_time: datetime, db
             params = {
                 "module": "account",
                 "action": "tokentx",
-                "contractaddress": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
+                "address": "0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640",
                 "page": page,
                 "offset": offset,
                 "sort": "asc",  # Ascending order: older transactions first.
